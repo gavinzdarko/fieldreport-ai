@@ -1,40 +1,56 @@
-# FieldReport AI Hackathon Demo Script
+# FieldReport AI Hackathon Talk Track
 
-## 30-Second Intro
+## One-Line Pitch
 
-FieldReport AI helps public-safety teams draft DUI incident reports from evidence while keeping the officer in control.
+FieldReport AI is an evidence-grounded incident documentation agent that turns bodycam, dispatch, and officer notes into a department-aware DUI report with citations, flags, review, approval, and audit trail.
 
-The app takes current-case evidence like bodycam transcripts, dispatch logs, and officer notes, then combines that with department-specific policy and historical report patterns. It produces a citation-backed draft, flags contradictions and missing information, and keeps an audit trail for AI-generated text, human edits, and supervisor approval.
+## 30-Second Opening
 
-For this MVP, we focused on one reliable happy path: a Metro PD DUI arrest case.
+FieldReport AI is built for the Company Brain track.
+
+The core idea is that every police department has a brain. It lives in past reports, supervisor feedback, policy emails, Slack messages, and SOPs. But when an officer writes a report at 2 AM, that knowledge is scattered and hard to use.
+
+Our demo shows a DUI report workflow where the app ingests department knowledge, processes current-case evidence, retrieves department-specific requirements, drafts a citation-backed report, flags issues, and lets an officer and supervisor review it with a full audit trail.
 
 ## Problem
 
-DUI reports are high-stakes and repetitive, but they still require exact details.
+DUI reports are repetitive, but the details are legally important.
 
-An officer needs to include SFST clue counts, Miranda timing and response, vehicle details, tow information, charges, and department-specific supervisor preferences. Missing one detail can create legal or review problems.
+An officer needs exact SFST clue counts, Miranda time, the officer who gave Miranda, the suspect response, a full vehicle description, tow details, charges, and department-specific supervisor preferences.
 
-At the same time, evidence arrives from different places: bodycam, dispatch, and handwritten officer notes. Today, the officer has to manually stitch all of that together.
+If those details are missing, the report gets kicked back or creates legal risk.
 
-FieldReport AI turns that scattered evidence into a structured, reviewable draft.
+The problem is not just writing. The problem is combining current evidence with the department's institutional knowledge.
+
+## Why This Is Company Brain
+
+Say this clearly:
+
+The department brain is load-bearing. If we remove it, the report gets worse.
+
+Without the brain, the draft says generic things like "failed field sobriety tests" or "Miranda rights were read."
+
+With the brain, it knows Sgt. Rodriguez wants exact SFST clue counts like HGN 6/6, Walk and Turn 4/8, and One Leg Stand 3/4. It knows Legal Division requires exact Miranda time, officer, and quoted suspect response. It knows Metro PD reports include full vehicle descriptions and both CVC 23152a and 23152b charges.
+
+That is the difference between generic AI text and a department-approvable report.
 
 ## What We Built
 
 We built a localhost MVP with:
 
-- Evidence ingestion for bodycam, dispatch, and officer notes.
-- Stateful case processing so bodycam can be processed first and dispatch can extend the same case memory later.
-- Department knowledge retrieval for Metro PD DUI patterns and Sgt. Rodriguez requirements.
-- AI report drafting with citations on factual claims.
+- Hyperspell-style ingestion of past reports, supervisor feedback, and policies.
+- Nia-style retrieval for department requirements and past report patterns.
+- Tensorlake-style stateful evidence processing with durable case memory.
+- InsForge-ready database path through `DATABASE_URL`, with local fallback.
+- OpenAI-compatible drafting through a provider boundary.
+- Citation-backed report output.
 - Contradiction and missing-info flags.
-- Review, edit, approval, and audit trail.
-- Hardcoded demo roles: Officer Chen can edit, Sgt. Rodriguez can approve.
+- Officer edit, supervisor approval, and audit trail.
+- A with-brain versus without-brain comparison to prove the company brain matters.
 
-## Live Demo Flow
+## Demo Setup
 
-### 1. Open The Demo
-
-Go to:
+Open:
 
 ```text
 http://localhost:3000/demo
@@ -42,9 +58,11 @@ http://localhost:3000/demo
 
 Say:
 
-This is the guided demo. Instead of showing a bunch of internal APIs, we made one button that runs the complete case flow.
+This is one DUI case: MPD-2025-0519. The evidence sources are bodycam, dispatch, and officer notes. The department brain contains prior DUI reports, Sgt. Rodriguez feedback, Legal Division policy guidance, and policy documents.
 
-### 2. Run The Full Demo
+## Live Demo Flow
+
+### 1. Run The Demo
 
 Click:
 
@@ -54,37 +72,65 @@ Run full demo
 
 Say:
 
-The app is loading department knowledge, processing evidence, extending case memory, and generating a report draft.
+This runs the full pipeline: department brain initialization, evidence processing, case memory update, Nia retrieval, report drafting, flags, and audit trail creation.
 
-The important part is that dispatch is not processed as a separate isolated file. It updates the same case state that bodycam created earlier.
+### 2. Explain Hyperspell
 
-### 3. Explain The Sponsor Pieces
-
-Say:
-
-We kept sponsor integrations behind clean adapters.
-
-Nia is used for department-aware retrieval. In the demo, it retrieves things like Sgt. Rodriguez requiring SFST clue counts and full vehicle descriptions.
-
-Hyperspell supports the ingestion story. We ingest prior reports, policy docs, and supervisor feedback into the department brain.
-
-Tensorlake is represented by a stateful evidence processor. The MVP simulates the workflow locally, but preserves the same boundary: process evidence, get case state.
-
-InsForge is represented through the database layer. We use `DATABASE_URL` as the Postgres path, with a local fallback so the demo works without blocking on SDK setup.
-
-### 4. Point Out The Flags
+Point to the ingestion/status area.
 
 Say:
 
-The app catches two things that matter in this case.
+Hyperspell is the ingestion layer. In a real deployment, this is where past reports from Google Drive, supervisor feedback from Slack, and policy emails from Gmail would enter the system.
 
-First, dispatch classifies the call as hit-and-run with property damage, but bodycam shows the driver was still at the scene.
+For the hackathon demo, we use local fallback data with the same adapter interface so the demo is reliable.
+
+### 3. Explain Tensorlake
+
+Point to bodycam and dispatch processing.
+
+Say:
+
+Tensorlake is the stateful evidence processing layer. The important moment is that bodycam is processed first, then dispatch is added second to the same case memory. We are not recomputing everything from scratch.
+
+That matters because real cases evolve as more evidence arrives.
+
+### 4. Explain Nia
+
+Point to the Nia context / brain panel.
+
+Say:
+
+Nia is the retrieval layer. Before drafting, the agent asks questions like:
+
+- What does Sgt. Rodriguez require in DUI reports?
+- What do past Metro PD DUI reports look like?
+- What does Miranda policy require?
+
+Those results shape the draft, but past reports are only used for style and requirements, not facts.
+
+### 5. Show With-Brain vs Without-Brain
+
+Say:
+
+This is the key Company Brain proof.
+
+Without the department brain, the draft is generic. With the brain, it includes exact SFST clue counts, Miranda details, full vehicle description, tow details, and the correct DUI charges.
+
+The brain is not decoration. It changes the output.
+
+### 6. Show Flags
+
+Say:
+
+The app flags two case issues.
+
+First, dispatch says hit-and-run with property damage, but bodycam shows the driver was still at the scene.
 
 Second, the driver says he came from "Mike's place on 5th" and had "a couple drinks", but the exact address and exact drink count are missing.
 
-The app does not silently fix those. It flags them for human review.
+The app does not silently resolve those. It surfaces them for human review.
 
-### 5. Open Review
+### 7. Open Review
 
 Click:
 
@@ -94,19 +140,17 @@ Open review workbench
 
 Say:
 
-This is where the officer or supervisor reviews the generated report. The draft has citation badges so the reviewer can trace claims back to evidence.
+This is the report review screen. The officer can inspect the draft, citations, flags, timeline, brain context, and audit trail.
 
-### 6. Show Citations
+### 8. Show Citations
 
 Click a citation badge in the report.
 
 Say:
 
-Every factual claim should point back to evidence. Clicking a citation shows the source reference and text.
+Every factual claim links back to evidence. The point is not to hide AI output. The point is to make every claim inspectable.
 
-This is important because the product is not trying to replace officer judgment. It is trying to make the draft faster and easier to verify.
-
-### 7. Show Timeline
+### 9. Show Timeline
 
 Click:
 
@@ -116,9 +160,21 @@ Timeline
 
 Say:
 
-The timeline combines dispatch and bodycam events chronologically. This helps the reviewer see what happened and where contradictions came from.
+The timeline combines bodycam and dispatch chronologically. This helps explain why the hit-and-run classification conflicts with driver-at-scene evidence.
 
-### 8. Show Audit Trail
+### 10. Show Brain Context
+
+Click:
+
+```text
+Brain Context
+```
+
+Say:
+
+This shows the Nia retrieval results that shaped the report. It gives the reviewer visibility into what department knowledge the agent used.
+
+### 11. Show Audit Trail
 
 Click:
 
@@ -128,11 +184,13 @@ Audit Trail
 
 Say:
 
-The audit trail records AI-drafted fields, human edits, and final approval. That is critical for accountability in public-safety workflows.
+The audit trail records what the AI drafted, what the human changed, and who approved it. The latest version shows per-field diffs, not just a vague "report changed" event.
 
-### 9. Show Roles
+For public-safety workflows, accountability is a product requirement, not a nice-to-have.
 
-Switch user to:
+### 12. Show Roles
+
+Switch to:
 
 ```text
 Officer Chen
@@ -142,7 +200,7 @@ Say:
 
 Officer Chen can review and edit, but cannot approve the final report.
 
-Switch user to:
+Switch to:
 
 ```text
 Sgt. Rodriguez
@@ -150,7 +208,23 @@ Sgt. Rodriguez
 
 Say:
 
-Sgt. Rodriguez can approve the final report. This mirrors a lightweight version of department workflow permissions.
+Sgt. Rodriguez can edit and approve. This is a lightweight mock of department permissions.
+
+## Sponsor Integration Explanation
+
+Say:
+
+We optimized for a working demo first, but kept clean adapter boundaries.
+
+- `hyperspell.ts` handles ingestion and search.
+- `nia.ts` handles department-brain indexing and retrieval.
+- `tensorlake.ts` handles stateful evidence processing.
+- `insforge.ts` documents the InsForge/Postgres path.
+- `agent.ts` owns the drafting provider boundary.
+
+If a sponsor API key is present, the wrapper can call the real provider. If not, it falls back locally with the same method signature.
+
+That is why the demo works end-to-end without API keys, but the architecture is still swappable.
 
 ## Technical Architecture
 
@@ -158,34 +232,18 @@ Say:
 
 The app is built with Next.js 14 App Router, TypeScript, Tailwind, Drizzle, and a Postgres-ready database layer.
 
-The core design decision was to keep provider boundaries clean:
+The sample data is embedded for deployment readiness, so the app can run on Vercel without relying on filesystem reads.
 
-- `nia.ts` handles Nia-style retrieval.
-- `hyperspell.ts` handles ingestion/search.
-- `tensorlake.ts` handles stateful evidence processing.
-- `insforge.ts` documents the database path.
-- `agent.ts` handles report drafting through an OpenAI-compatible provider.
-
-If a real sponsor API is not available, the adapter falls back locally with the same interface. That kept the demo reliable while preserving swap-in points.
-
-## Why This Is Useful
-
-Say:
-
-The key value is not just generating text. The value is structured evidence processing plus department-aware drafting plus review controls.
-
-For a real department, this could reduce report drafting time while making required details easier to catch before supervisor review or legal review.
+The report drafting uses an OpenAI-compatible provider boundary. If `OPENAI_API_KEY` is missing, it uses a deterministic local draft so the demo never breaks.
 
 ## Closing
 
 Say:
 
-FieldReport AI shows how AI can support public-safety documentation without hiding the source of facts or removing human accountability.
+FieldReport AI is not just a report generator. It is a department-aware documentation workflow.
 
-The MVP demonstrates the full path: ingest department knowledge, process evidence, update case memory, draft a cited report, flag issues, edit, approve, and audit the workflow.
+It combines current evidence with institutional knowledge, proves the company brain changes the output, keeps citations attached to factual claims, flags issues instead of hiding them, and preserves human review through audit and approval.
 
-## Short Version If Time Is Tight
+## If You Only Have 20 Seconds
 
-FieldReport AI drafts DUI reports from bodycam, dispatch, and officer notes. It retrieves department-specific requirements, processes evidence into a timeline, drafts a cited report, flags contradictions and missing info, and supports officer edit plus supervisor approval with audit trail.
-
-The demo uses local adapters for sponsor APIs where needed, but the boundaries are clean so Nia, Hyperspell, Tensorlake, and InsForge can be swapped in later.
+FieldReport AI drafts DUI reports from bodycam, dispatch, and officer notes. The company brain is built from past reports, supervisor feedback, and policies. With that brain, the report includes department-specific requirements like exact SFST clue counts, Miranda documentation, vehicle details, and charges. Without it, the report is generic. The demo shows evidence processing, Nia retrieval, a cited report, flags, review, and audit trail.
