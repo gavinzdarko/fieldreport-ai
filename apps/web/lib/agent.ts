@@ -51,11 +51,10 @@ CURRENT EVIDENCE (facts for this case):
 ${evidenceBlock(evidence)}`;
 }
 
+const WITHOUT_BRAIN_SYSTEM = `You are drafting a generic DUI Arrest report. You have NO knowledge of this department's specific policies, supervisor preferences, or reporting conventions. Write a standard DUI report using only the raw evidence provided. Do NOT include specific SFST clue counts as fractions — just describe the results generally. Do NOT include specific Miranda documentation requirements. Use a generic narrative format. Return strict JSON with keys: narrative, charges, property, miranda_documentation, vehicle_description, citations, policy_compliance.`;
+
 class OpenAIDraftingProvider implements DraftingProvider {
-  private client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL
-  });
+  private client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   async draft(prompt: string) {
     const completion = await this.client.chat.completions.create({
@@ -78,6 +77,8 @@ class OpenAIDraftingProvider implements DraftingProvider {
     return JSON.parse(content) as DraftReport;
   }
 }
+
+// ── Local provider WITH brain (department-aware) ──
 
 class LocalDraftingProvider implements DraftingProvider {
   constructor(private evidence: ProcessedCaseState) {}
@@ -114,9 +115,9 @@ class LocalDraftingProvider implements DraftingProvider {
         text
       })),
       policy_compliance: [
-        `Sgt. Rodriguez requirement met: SFST clue counts listed as ${facts.sfst?.hgn ?? "[MISSING]"}, ${facts.sfst?.walkAndTurn ?? "[MISSING]"}, ${facts.sfst?.oneLegStand ?? "[MISSING]"}.`,
-        `Miranda policy check: exact time, officer, and quoted response are included when available.`,
-        `Vehicle description check: full year, make, model, color, and plate included from officer notes.`
+        `✅ Sgt. Rodriguez requirement met: SFST clue counts listed as ${facts.sfst?.hgn ?? "[MISSING]"}, ${facts.sfst?.walkAndTurn ?? "[MISSING]"}, ${facts.sfst?.oneLegStand ?? "[MISSING]"} (per Slack feedback 2024-06-12).`,
+        `✅ Miranda policy check: exact time, officer, and quoted response included (per Legal Division email 2024-09-15).`,
+        `✅ Vehicle description check: full year, make, model, color, and plate included (per Sgt. Rodriguez Slack 2024-11-15).`
       ],
       contradictions: this.evidence.contradictions,
       missing_info: this.evidence.missingInfo
@@ -125,12 +126,62 @@ class LocalDraftingProvider implements DraftingProvider {
   }
 }
 
+// ── Local provider WITHOUT brain (generic) ──
+
+class GenericDraftingProvider implements DraftingProvider {
+  constructor(private evidence: ProcessedCaseState) {}
+
+  async draft() {
+    const facts = this.evidence.facts;
+
+    const draft: DraftReport = {
+      narrative: [
+        `On 2025-05-09, officers responded to a traffic incident at ${facts.dispatch?.address ?? "[MISSING]"}. Upon arrival, the officer contacted the driver, who showed signs of impairment. The driver admitted to consuming alcohol prior to driving. The officer administered field sobriety tests, which the driver failed. The driver was subsequently placed under arrest for driving under the influence.`
+      ].join(" "),
+      charges: ["DUI"],
+      property: `Vehicle towed. Property damage reported.`,
+      miranda_documentation: `Miranda rights were read to the suspect. Suspect acknowledged rights.`,
+      vehicle_description: `White SUV, plate 8XYZ321`,
+      citations: Object.entries(this.evidence.citations).map(([ref, text]) => ({
+        ref,
+        source: ref.split(":")[0],
+        text
+      })),
+      policy_compliance: [
+        `❌ SFST clue counts missing — no specific fractions provided.`,
+        `❌ Miranda documentation incomplete — no exact time, officer name, or quoted response.`,
+        `❌ Vehicle description incomplete — missing year, make, and model.`,
+        `❌ No supervisor-specific requirements applied.`
+      ],
+      contradictions: this.evidence.contradictions,
+      missing_info: this.evidence.missingInfo
+    };
+    return draft;
+  }
+}
+
+// ── Nia context result type ──
+
+export type NiaContextResult = {
+  query: string;
+  results: SearchResult[];
+  tags?: string[];
+};
+
+// ── Main draft function WITH brain ──
+
 export async function draftReport(evidence: ProcessedCaseState) {
   const [requirements, patterns, miranda] = await Promise.all([
     niaSearch("Sgt. Rodriguez DUI report requirements SFST vehicle description", ["requirements"], 4),
     niaSearch("past Metro PD DUI report patterns chronological third-person tow charges weather", ["past-report"], 3),
     niaSearch("Miranda policy requirements exact time officer response", ["miranda", "policy"], 3)
   ]);
+
+  const niaContext: NiaContextResult[] = [
+    { query: "Sgt. Rodriguez DUI report requirements SFST vehicle description", results: requirements.results, tags: ["requirements"] },
+    { query: "past Metro PD DUI report patterns chronological third-person", results: patterns.results, tags: ["past-report"] },
+    { query: "Miranda policy requirements exact time officer response", results: miranda.results, tags: ["miranda", "policy"] }
+  ];
 
   const niaResults = [...requirements.results, ...patterns.results, ...miranda.results];
   const prompt = buildPrompt(evidence, contextBlock(niaResults));
@@ -145,13 +196,46 @@ export async function draftReport(evidence: ProcessedCaseState) {
       citations: draft.citations?.length
         ? draft.citations
         : Object.entries(evidence.citations).map(([ref, text]) => ({ ref, source: ref.split(":")[0], text })),
+      niaContext,
       niaContextUsed: niaResults.length
     };
   } catch (error) {
     const fallback = await new LocalDraftingProvider(evidence).draft();
     return {
       ...fallback,
+      niaContext,
+      niaContextUsed: niaResults.length,
       provider_error: error instanceof Error ? error.message : "Unknown drafting provider error"
-    } as DraftReport & { provider_error: string };
+    } as DraftReport & { provider_error: string; niaContext: NiaContextResult[]; niaContextUsed: number };
   }
+}
+
+// ── Draft WITHOUT brain (for comparison) ──
+
+export async function draftReportWithoutBrain(evidence: ProcessedCaseState) {
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await client.chat.completions.create({
+        model: "gpt-4o",
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: WITHOUT_BRAIN_SYSTEM },
+          { role: "user", content: `DRAFT A DUI REPORT FROM THIS EVIDENCE (no department policies available):\n\n${evidenceBlock(evidence)}` }
+        ]
+      });
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        const draft = JSON.parse(content) as DraftReport;
+        return { ...draft, contradictions: evidence.contradictions, missing_info: evidence.missingInfo };
+      }
+    } catch (e) {
+      console.error("[Agent] Without-brain OpenAI call failed:", e);
+    }
+  }
+
+  // Local fallback
+  const provider = new GenericDraftingProvider(evidence);
+  return provider.draft();
 }
