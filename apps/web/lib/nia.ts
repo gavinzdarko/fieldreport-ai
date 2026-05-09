@@ -1,5 +1,7 @@
 import type { SearchResult } from "./types";
-import { readJsonFile, readSampleReportFiles, readTextFile, stableId } from "./utils";
+import { getSampleReportFiles } from "./utils";
+import { SUPERVISOR_FEEDBACK, POLICIES } from "./sample-data";
+import { stableId } from "./utils";
 
 const globalForNia = globalThis as unknown as { niaDocs?: SearchResult[] };
 const docs = globalForNia.niaDocs ?? (globalForNia.niaDocs = []);
@@ -14,28 +16,42 @@ function score(query: string, doc: SearchResult, tags?: string[]) {
 function ensureLocalCorpus() {
   if (docs.length > 0) return;
 
-  for (const report of readSampleReportFiles()) {
+  for (const report of getSampleReportFiles()) {
     niaIndex(`Past DUI report ${report.file}`, report.content, ["dui", "metro-pd", "past-report"], {
       source: report.file
     });
   }
 
-  const feedback = readJsonFile<Array<{ source: string; author: string; content: string }>>("sample-feedback.json");
-  feedback.forEach((item, index) => {
+  SUPERVISOR_FEEDBACK.forEach((item, index) => {
     niaIndex(`${item.source} from ${item.author} ${index + 1}`, item.content, ["dui", "feedback", "requirements"], {
-      source: `sample-feedback:${index + 1}`
+      source: `sample-feedback:${index + 1}`,
+      author: item.author,
+      channel: "channel" in item ? item.channel : undefined
     });
   });
 
-  niaIndex("Miranda policy", readTextFile("sample-policies", "miranda-policy.md"), ["policy", "miranda", "dui"], {
+  niaIndex("Miranda policy", POLICIES.miranda, ["policy", "miranda", "dui"], {
     source: "miranda-policy.md"
   });
-  niaIndex("SFST policy", readTextFile("sample-policies", "sfst-policy.md"), ["policy", "sfst", "dui"], {
+  niaIndex("SFST policy", POLICIES.sfst, ["policy", "sfst", "dui"], {
     source: "sfst-policy.md"
   });
 }
 
 export function niaIndex(title: string, content: string, tags: string[] = [], metadata: Record<string, unknown> = {}) {
+  // ── Try real Nia API first if key is available ──
+  if (process.env.NIA_API_KEY) {
+    fetch("https://api.trynia.ai/v1/documents", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.NIA_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ title, content, tags, metadata })
+    }).catch((err) => console.error("[Nia] Real API index failed:", err));
+  }
+
+  // ── Always index locally too so the demo works ──
   const existing = docs.find((doc) => doc.title === title);
   const doc: SearchResult = {
     id: existing?.id ?? stableId("nia"),
@@ -54,13 +70,36 @@ export function niaIndex(title: string, content: string, tags: string[] = [], me
   }
 
   return {
-    provider: process.env.NIA_API_KEY ? "nia-fallback-local" : "local",
+    provider: process.env.NIA_API_KEY ? "nia+local" : "local",
     status: "indexed",
     doc
   };
 }
 
 export async function niaSearch(query: string, tags?: string[], limit = 5) {
+  // ── Try real Nia API first ──
+  if (process.env.NIA_API_KEY) {
+    try {
+      const res = await fetch("https://api.trynia.ai/v1/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.NIA_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ query, filters: tags ? { tags } : undefined, limit })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results?.length) {
+          return { provider: "nia" as const, query, results: data.results };
+        }
+      }
+    } catch (err) {
+      console.error("[Nia] Real API search failed, falling back to local:", err);
+    }
+  }
+
+  // ── Fallback to local search ──
   ensureLocalCorpus();
   const results = docs
     .map((doc) => ({ ...doc, score: score(query, doc, tags) }))
@@ -69,7 +108,7 @@ export async function niaSearch(query: string, tags?: string[], limit = 5) {
     .slice(0, limit);
 
   return {
-    provider: process.env.NIA_API_KEY ? "nia-fallback-local" : "local",
+    provider: process.env.NIA_API_KEY ? ("nia-fallback-local" as const) : ("local" as const),
     query,
     results
   };
@@ -79,7 +118,7 @@ export function niaStats() {
   ensureLocalCorpus();
   return {
     count: docs.length,
-    provider: process.env.NIA_API_KEY ? "nia-fallback-local" : "local"
+    provider: process.env.NIA_API_KEY ? "nia+local" : "local"
   };
 }
 

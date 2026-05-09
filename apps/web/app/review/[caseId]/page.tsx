@@ -6,10 +6,10 @@ import AuditTrailView from "@/components/AuditTrailView";
 import FlagsPanel from "@/components/FlagsPanel";
 import ReportView from "@/components/ReportView";
 import TimelineView from "@/components/TimelineView";
-import type { AuditRecord, CaseRecord, DraftReport, ProcessedCaseState, ReportRecord } from "@/lib/types";
+import type { AuditRecord, CaseRecord, DraftReport, NiaContextResult, ProcessedCaseState, ReportRecord } from "@/lib/types";
 import { DEMO_USERS } from "@/lib/demo";
 
-type Tab = "report" | "timeline" | "audit";
+type Tab = "report" | "timeline" | "audit" | "brain";
 
 export default function ReviewPage({ params }: { params: { caseId: string } }) {
   const caseId = decodeURIComponent(params.caseId);
@@ -23,6 +23,7 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [niaContext, setNiaContext] = useState<NiaContextResult[] | null>(null);
 
   const activeUser = DEMO_USERS.find((item) => item.name === user) ?? DEMO_USERS[0];
 
@@ -38,6 +39,9 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
     setReport(reportJson.report ?? null);
     const currentDraft = reportJson.report?.final ?? reportJson.report?.human_edit ?? reportJson.report?.ai_draft ?? null;
     setDraft(currentDraft);
+    if (currentDraft?.niaContext) {
+      setNiaContext(currentDraft.niaContext);
+    }
     if (reportJson.report?.id) {
       const auditResponse = await fetch(`/api/audit?reportId=${reportJson.report.id}`);
       const auditJson = await auditResponse.json();
@@ -62,10 +66,11 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
       const response = await fetch("/api/reports/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseId, actor: "FieldReport AI" })
+        body: JSON.stringify({ caseId, actor: "FieldReport AI", includeComparison: false })
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error ?? "Draft failed");
+      if (json.niaContext) setNiaContext(json.niaContext);
       await load();
       setMessage("Draft generated.");
     } catch (error) {
@@ -139,13 +144,13 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
       </header>
 
       <nav className="mb-6 flex flex-wrap gap-2">
-        {(["report", "timeline", "audit"] as const).map((item) => (
+        {(["report", "brain", "timeline", "audit"] as const).map((item) => (
           <button
             key={item}
             className={`rounded-full px-4 py-2 text-sm font-bold capitalize ${tab === item ? "bg-ink text-white" : "bg-white/70 text-ink"}`}
             onClick={() => setTab(item)}
           >
-            {item === "audit" ? "Audit Trail" : item}
+            {item === "audit" ? "Audit Trail" : item === "brain" ? "🧠 Brain Context" : item}
           </button>
         ))}
       </nav>
@@ -166,6 +171,50 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
                 </div>
               )}
               {draft && <ReportView report={draft} editable={editing} onChange={setDraft} />}
+            </div>
+          )}
+          {tab === "brain" && (
+            <div className="rounded-[2rem] border border-ink/10 bg-white/80 p-6 shadow-card">
+              <h2 className="mb-4 font-display text-2xl text-ink">🔍 Nia Semantic Search Results</h2>
+              <p className="mb-4 text-sm text-ink/65">
+                These are the department brain queries that shaped the report draft.
+                Each result comes from data ingested by Hyperspell and indexed by Nia.
+              </p>
+              {niaContext && niaContext.length > 0 ? (
+                <div className="space-y-4">
+                  {niaContext.map((ctx, i) => (
+                    <div key={i} className="rounded-xl border border-ink/10 bg-paper/50 p-4">
+                      <p className="text-sm font-bold text-slateblue">Query {i + 1}: &ldquo;{ctx.query}&rdquo;</p>
+                      <div className="mt-2 space-y-2">
+                        {ctx.results.slice(0, 2).map((r, j) => (
+                          <div key={j} className="rounded-lg bg-white p-3 shadow-sm">
+                            <p className="text-sm text-ink/80">&ldquo;{r.content.length > 250 ? r.content.slice(0, 250) + "..." : r.content}&rdquo;</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <span className="source-badge">{r.source}</span>
+                              {r.tags.map((tag) => (
+                                <span key={tag} className="rounded-full bg-slateblue/10 px-2 py-0.5 text-xs text-slateblue">{tag}</span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {ctx.results.length === 0 && <p className="text-sm text-ink/40 italic">No results returned for this query.</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-ink/50">No Nia context stored for this draft. Generate a new draft to see the brain queries.</p>
+                  <div className="rounded-xl border border-slateblue/20 bg-slateblue/5 p-4">
+                    <p className="text-sm font-bold text-slateblue">Example Nia queries that would shape a DUI draft:</p>
+                    <ul className="mt-2 space-y-1 text-sm text-ink/70">
+                      <li>• &ldquo;Sgt. Rodriguez DUI report requirements SFST vehicle description&rdquo; → Returns Slack feedback about SFST clue counts and vehicle descriptions</li>
+                      <li>• &ldquo;Miranda policy requirements exact time officer response&rdquo; → Returns Legal Division email about Miranda documentation</li>
+                      <li>• &ldquo;past Metro PD DUI report patterns&rdquo; → Returns 3 past DUI reports for style reference</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {tab === "timeline" && (
@@ -213,6 +262,18 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
           </div>
         </div>
       </section>
+
+      {/* ── Sponsor bar ── */}
+      <footer className="mt-12 border-t border-ink/10 pt-6 pb-8">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-ink/30 mb-3">Powered by</p>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">🧠 Hyperspell — Data ingestion</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">🔍 Nia — Knowledge search</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">⚡ Tensorlake — Evidence processing</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">🗄️ InsForge — Postgres backend</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">▲ Vercel — Deployment</span>
+        </div>
+      </footer>
     </main>
   );
 }
