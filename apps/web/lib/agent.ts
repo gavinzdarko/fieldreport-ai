@@ -22,28 +22,32 @@ function evidenceBlock(evidence: ProcessedCaseState) {
 }
 
 function contextBlock(results: SearchResult[]) {
-  return results.map((result) => `TITLE: ${result.title}\nSOURCE: ${result.source}\n${result.content}`).join("\n\n---\n\n");
+  return results
+    .map((result) =>
+      `[DEPARTMENT REFERENCE — for style, structure, and requirements only. Do NOT copy facts from this into the new report.]\nTitle: ${result.title}\nSource: ${result.source}\nContent: ${result.content}`
+    )
+    .join("\n\n---\n\n");
 }
 
 function buildPrompt(evidence: ProcessedCaseState, context: string) {
   return `You are drafting a Metro PD DUI Arrest report.
 
-Use only facts from current evidence. Use past reports only for style and structure, not facts.
+Use only facts from the CURRENT EVIDENCE section below. Use the DEPARTMENT REFERENCE section only for style, structure, and policy requirements — never copy facts from past reports into the new report.
 Write a chronological third-person narrative.
-Include explicit SFST clue counts.
-Include Miranda exact time, officer, and suspect response.
-Include full vehicle description.
-Mark missing required info as [MISSING: ...].
-Do not resolve contradictions automatically.
+Include explicit SFST clue counts as fractions (e.g. 6/6, 4/8, 3/4).
+Include Miranda with exact time, officer name and badge, and quoted suspect response.
+Include full vehicle description (year, make, model, color, plate).
+Mark missing required info as [MISSING: ...] — do NOT guess or fabricate.
+Do not resolve contradictions automatically — flag them for the officer.
 Every factual claim must include [SOURCE:reference].
 
 Return strict JSON with these keys:
 narrative, charges, property, miranda_documentation, vehicle_description, citations, policy_compliance.
 
-DEPARTMENT CONTEXT:
+DEPARTMENT CONTEXT (style/requirements only — NOT facts for this case):
 ${context}
 
-CURRENT EVIDENCE:
+CURRENT EVIDENCE (facts for this case):
 ${evidenceBlock(evidence)}`;
 }
 
@@ -61,7 +65,7 @@ class OpenAIDraftingProvider implements DraftingProvider {
       messages: [
         {
           role: "system",
-          content: "You draft public-safety reports as strict JSON. Do not include facts that are not in the current evidence."
+          content: "You draft public-safety reports as strict JSON. Use only facts from the current evidence. Use department context only for style and requirements, not for facts."
         },
         {
           role: "user",
@@ -102,7 +106,7 @@ class LocalDraftingProvider implements DraftingProvider {
       ].join(" "),
       charges: ["CVC 23152a", "CVC 23152b"],
       property: `${facts.property?.tow ?? "Vehicle tow information is [MISSING: tow details]."} ${facts.property?.damageOwner ?? "Property damage owner is [MISSING: owner]."} ${sourceMarker(notesRef)}`,
-      miranda_documentation: `${facts.miranda?.time ?? "[MISSING: exact time]"}; ${facts.miranda?.officer ?? "[MISSING: officer]"}; "${facts.miranda?.suspectResponse ?? "[MISSING: quoted suspect response]"}" ${sourceMarker(mirandaRef)}`,
+      miranda_documentation: `Miranda rights administered at ${facts.miranda?.time ?? "[MISSING: exact time]"} by ${facts.miranda?.officer ?? "[MISSING: officer]"}. Suspect stated: "${facts.miranda?.suspectResponse ?? "[MISSING: quoted suspect response]"}" ${sourceMarker(mirandaRef)}`,
       vehicle_description: `${vehicle} ${sourceMarker(notesRef)}`,
       citations: Object.entries(this.evidence.citations).map(([ref, text]) => ({
         ref,
@@ -140,7 +144,8 @@ export async function draftReport(evidence: ProcessedCaseState) {
       missing_info: evidence.missingInfo,
       citations: draft.citations?.length
         ? draft.citations
-        : Object.entries(evidence.citations).map(([ref, text]) => ({ ref, source: ref.split(":")[0], text }))
+        : Object.entries(evidence.citations).map(([ref, text]) => ({ ref, source: ref.split(":")[0], text })),
+      niaContextUsed: niaResults.length
     };
   } catch (error) {
     const fallback = await new LocalDraftingProvider(evidence).draft();

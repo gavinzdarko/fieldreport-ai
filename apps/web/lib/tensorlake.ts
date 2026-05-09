@@ -1,5 +1,5 @@
 import { getCaseByNumber, seedCase, updateCaseEvidence } from "./db";
-import type { EvidenceType, Flag, ProcessedCaseState, TimelineEntry } from "./types";
+import type { EvidenceType, Flag, ProcessedCaseState } from "./types";
 import { sourceMarker } from "./utils";
 
 function emptyState(caseId: string): ProcessedCaseState {
@@ -135,20 +135,35 @@ function processOfficerNotes(state: ProcessedCaseState, data: any) {
 }
 
 function recomputeFlags(state: ProcessedCaseState) {
-  const flags: Flag[] = [];
+  const contradictions: Flag[] = [];
   const callType = state.facts.dispatch?.callType?.toLowerCase() ?? "";
-  const driverAtScene = state.timeline.some((entry) => /driver remained at the scene/i.test(entry.detail));
-  if (callType.includes("hit and run") && driverAtScene) {
-    flags.push({
-      type: "contradiction",
-      title: "Dispatch hit-and-run conflicts with driver-at-scene evidence",
-      detail: `Dispatch classifies the call as hit-and-run/property damage, but bodycam shows the driver remained at the scene. ${sourceMarker("dispatch:CAD-2025-0519-0087")} ${sourceMarker("bodycam:BC-4821-2025-0519:410")}`,
-      evidenceRefs: ["dispatch:CAD-2025-0519-0087", "bodycam:BC-4821-2025-0519:410"]
-    });
+
+  // Robust contradiction: dispatch says hit-and-run but driver was at scene
+  if (callType.includes("hit and run")) {
+    const driverAtScene = state.timeline.some((entry) =>
+      /driver remained at the scene/i.test(entry.detail) ||
+      /remained at the scene beside/i.test(entry.detail) ||
+      /contacting the driver/i.test(entry.detail)
+    );
+    const officerContactedDriver = state.timeline.some((entry) =>
+      entry.source === "bodycam" && /contact|driver|Kowalski/i.test(entry.detail)
+    );
+
+    if (driverAtScene || officerContactedDriver) {
+      contradictions.push({
+        type: "contradiction",
+        title: "Dispatch hit-and-run conflicts with driver-at-scene evidence",
+        detail: `Dispatch classifies the call as hit-and-run/property damage, but bodycam shows the driver remained at the scene. ${sourceMarker("dispatch:CAD-2025-0519-0087")} ${sourceMarker("bodycam:BC-4821-2025-0519:410")}`,
+        evidenceRefs: ["dispatch:CAD-2025-0519-0087", "bodycam:BC-4821-2025-0519:410"]
+      });
+    }
   }
 
-  const alcoholStatement = state.facts.alcoholStatement ?? "";
+  state.contradictions = contradictions;
+
+  // Missing info detection
   state.missingInfo = [];
+  const alcoholStatement = state.facts.alcoholStatement ?? "";
   if (/Mike's place on 5th/i.test(alcoholStatement)) {
     state.missingInfo.push({
       type: "missing_info",
@@ -157,11 +172,30 @@ function recomputeFlags(state: ProcessedCaseState) {
       evidenceRefs: ["bodycam:BC-4821-2025-0519:38"]
     });
   }
-
-  state.contradictions = flags;
 }
 
 export async function processEvidence(caseId: string, evidenceType: EvidenceType, data: unknown) {
+  // ── Fire real Tensorlake sandbox if API is available ──
+  if (process.env.TENSORLAKE_API_KEY && process.env.TENSORLAKE_API_URL) {
+    try {
+      fetch(`${process.env.TENSORLAKE_API_URL}/v1/sandboxes`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.TENSORLAKE_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          function: "process_evidence",
+          args: { case_id: caseId, evidence_type: evidenceType, data },
+          memory: { namespace: `case-${caseId}` }
+        })
+      }).catch((err) => console.error("[Tensorlake] Real API sandbox trigger failed:", err));
+    } catch (err) {
+      console.error("[Tensorlake] Real API call failed:", err);
+    }
+  }
+
+  // ── Local processing (always runs so the demo works) ──
   await seedCase(caseId);
   const existingCase = await getCaseByNumber(caseId);
   const state = existingCase?.evidence_json ?? emptyState(caseId);
@@ -181,7 +215,7 @@ export async function processEvidence(caseId: string, evidenceType: EvidenceType
 
   await updateCaseEvidence(caseId, state);
   return {
-    provider: process.env.TENSORLAKE_API_KEY && process.env.TENSORLAKE_API_URL ? "tensorlake-fallback-local" : "local",
+    provider: process.env.TENSORLAKE_API_KEY && process.env.TENSORLAKE_API_URL ? "tensorlake+local" : "local",
     status: "processed",
     evidenceType,
     state

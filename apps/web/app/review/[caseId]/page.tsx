@@ -213,6 +213,18 @@ export default function ReviewPage({ params }: { params: { caseId: string } }) {
           </div>
         </div>
       </section>
+
+      {/* ── Sponsor bar ── */}
+      <footer className="mt-12 border-t border-ink/10 pt-6 pb-8">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-ink/30 mb-3">Powered by</p>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">🧠 Hyperspell — Data ingestion</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">🔍 Nia — Knowledge search</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">⚡ Tensorlake — Evidence processing</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">🗄️ InsForge — Postgres backend</span>
+          <span className="rounded-full border border-ink/15 px-3 py-1 text-ink/50">▲ Vercel — Deployment</span>
+        </div>
+      </footer>
     </main>
   );
 }

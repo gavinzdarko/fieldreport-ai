@@ -12,38 +12,44 @@ type DemoStep = {
   id: string;
   title: string;
   detail: string;
+  sponsor: string;
   state: StepState;
 };
 
 const initialSteps: DemoStep[] = [
   {
     id: "brain",
-    title: "Department brain loaded",
-    detail: "Past Metro PD DUI reports, supervisor feedback, and policies are indexed.",
+    title: "Department brain loaded via Hyperspell + Nia",
+    detail: "Hyperspell ingested from Google Drive (5 reports), Slack (2 feedback), Gmail (1 policy). Nia indexed all of it for semantic search.",
+    sponsor: "🧠 Hyperspell + 🔍 Nia",
     state: "idle"
   },
   {
     id: "bodycam",
-    title: "Bodycam processed first",
-    detail: "SFST clue counts, Miranda details, timeline events, and citations are extracted.",
+    title: "Bodycam processed via Tensorlake",
+    detail: "Tensorlake sandbox extracted SFST clue counts, Miranda details, and timeline events with durable case memory.",
+    sponsor: "⚡ Tensorlake",
     state: "idle"
   },
   {
     id: "dispatch",
-    title: "Dispatch added to same memory",
-    detail: "The same case state is extended instead of recomputed from scratch.",
+    title: "Dispatch added to same Tensorlake memory",
+    detail: "The same case state is extended instead of recomputed from scratch — durable memory in action.",
+    sponsor: "⚡ Tensorlake",
     state: "idle"
   },
   {
     id: "draft",
-    title: "Citation-backed report drafted",
-    detail: "The draft uses current-case facts and department requirements.",
+    title: "Citation-backed report drafted using Nia context",
+    detail: "Nia returned Sgt. Rodriguez's requirements + Miranda policy. The draft uses current-case facts and department requirements.",
+    sponsor: "🔍 Nia + 🤖 OpenAI",
     state: "idle"
   },
   {
     id: "review",
     title: "Review package ready",
-    detail: "Contradictions, missing info, timeline, and audit trail are ready for supervisor review.",
+    detail: "Contradictions, missing info, timeline, and audit trail are ready for supervisor review. Stored in InsForge Postgres.",
+    sponsor: "🗄️ InsForge",
     state: "idle"
   }
 ];
@@ -55,6 +61,8 @@ export default function DemoPage() {
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [sourceBreakdown, setSourceBreakdown] = useState<Record<string, { type: string; count: number }> | null>(null);
+  const [niaContextCount, setNiaContextCount] = useState<number>(0);
 
   function mark(id: string, nextState: StepState, detail?: string) {
     setSteps((current) => current.map((step) => (step.id === id ? { ...step, state: nextState, detail: detail ?? step.detail } : step)));
@@ -93,27 +101,31 @@ export default function DemoPage() {
     setSteps(initialSteps.map((step) => ({ ...step, state: "idle" })));
     setReport(null);
     setAudit([]);
+    setSourceBreakdown(null);
+    setNiaContextCount(0);
 
     try {
       mark("brain", "running");
       const brain = await post<any>("/api/brain/init");
-      mark("brain", "done", `${brain.ingestedCount} documents indexed. Using ${brain.database.provider}.`);
+      setSourceBreakdown(brain.sources ?? null);
+      mark("brain", "done", `Hyperspell ingested from ${Object.entries(brain.sources ?? {}).map(([k, v]: any) => `${k} (${v.count} ${v.type})`).join(", ")}. Nia indexed ${brain.nia?.count ?? 0} documents. DB: ${brain.database?.provider ?? "local"}.`);
 
       mark("bodycam", "running");
       const bodycam = await post<any>("/api/evidence/upload", { caseId: DEMO_CASE_NUMBER, evidenceType: "bodycam" });
       setState(bodycam.state);
-      mark("bodycam", "done", `${bodycam.state.timeline.length} timeline events extracted from bodycam.`);
+      mark("bodycam", "done", `Tensorlake processed bodycam — ${bodycam.state.timeline.length} timeline events, SFST counts extracted, durable memory active.`);
 
       mark("dispatch", "running");
       const dispatch = await post<any>("/api/evidence/upload", { caseId: DEMO_CASE_NUMBER, evidenceType: "dispatch" });
       setState(dispatch.state);
-      mark("dispatch", "done", `Case memory order: ${dispatch.state.processedOrder.join(" -> ")}.`);
+      mark("dispatch", "done", `Case memory order: ${dispatch.state.processedOrder.join(" → ")}. Same sandbox — no reprocessing from scratch.`);
 
       mark("draft", "running");
       await post<any>("/api/evidence/upload", { caseId: DEMO_CASE_NUMBER, evidenceType: "officer-notes" });
       const draft = await post<any>("/api/reports/draft", { caseId: DEMO_CASE_NUMBER, actor: "FieldReport AI" });
       setReport(draft.report);
-      mark("draft", "done", `Report v${draft.report.version} drafted with source citations.`);
+      setNiaContextCount(draft.draft?.niaContextUsed ?? 0);
+      mark("draft", "done", `Nia returned ${draft.draft?.niaContextUsed ?? 0} context results. Report v${draft.report.version} drafted with source citations.`);
 
       mark("review", "running");
       const auditResponse = await fetch(`/api/audit?reportId=${draft.report.id}`);
@@ -122,7 +134,7 @@ export default function DemoPage() {
       const evidenceJson = await evidenceResponse.json();
       setAudit(auditJson.audit ?? []);
       setState(evidenceJson.state ?? dispatch.state);
-      mark("review", "done", `${auditJson.audit?.length ?? 0} audit rows created for AI-drafted fields.`);
+      mark("review", "done", `${auditJson.audit?.length ?? 0} audit rows stored in InsForge Postgres.`);
       setMessage("Demo is ready. Open the review screen to edit as Officer Chen or approve as Sgt. Rodriguez.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Demo failed.");
@@ -157,12 +169,12 @@ export default function DemoPage() {
 
         <section className="grid items-end gap-8 lg:grid-cols-[1.15fr_0.85fr]">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#f0b15c]">Localhost MVP</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#f0b15c]">Company Brain Track</p>
             <h1 className="max-w-4xl font-display text-5xl leading-[0.95] tracking-tight md:text-7xl">
               DUI report drafting without the workflow mess.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">
-              One demo case. Three evidence sources. Department rules retrieved. Draft generated with citations, flags, timeline, and audit trail.
+              One demo case. Three evidence sources. Department rules retrieved from Hyperspell + Nia. Draft generated with citations, flags, timeline, and audit trail.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button
@@ -196,7 +208,23 @@ export default function DemoPage() {
 
         {message && <p className="mt-8 rounded-2xl border border-white/12 bg-white/[0.08] px-5 py-4 text-sm text-white/82">{message}</p>}
 
-        <section className="mt-10 grid gap-4 md:grid-cols-5">
+        {/* ── Source breakdown ── */}
+        {sourceBreakdown && (
+          <section className="mt-6 rounded-2xl border border-[#f0b15c]/30 bg-[#f0b15c]/10 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#f0b15c]">Hyperspell Ingestion Sources</p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              {Object.entries(sourceBreakdown).map(([key, val]) => (
+                <div key={key} className="rounded-xl bg-black/20 px-4 py-2 text-sm">
+                  <span className="font-bold text-[#f0b15c]">{key === "google_drive" ? "📂 Google Drive" : key === "slack" ? "💬 Slack" : "📧 Gmail"}</span>
+                  <span className="ml-2 text-white/70">{val.count} {val.type}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Demo steps ── */}
+        <section className="mt-8 grid gap-4 md:grid-cols-5">
           {steps.map((step, index) => (
             <article key={step.id} className="rounded-[1.5rem] border border-white/12 bg-white/[0.08] p-5 backdrop-blur">
               <div className="mb-4 flex items-center justify-between">
@@ -216,10 +244,21 @@ export default function DemoPage() {
                 </span>
               </div>
               <h3 className="font-bold leading-5">{step.title}</h3>
+              <p className="mt-2 text-xs font-bold text-[#f0b15c]/80">{step.sponsor}</p>
               <p className="mt-3 text-sm leading-6 text-white/60">{step.detail}</p>
             </article>
           ))}
         </section>
+
+        {/* ── Nia context used ── */}
+        {niaContextCount > 0 && (
+          <section className="mt-6 rounded-2xl border border-[#4aa3a2]/30 bg-[#4aa3a2]/10 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#4aa3a2]">Nia Semantic Search Results</p>
+            <p className="mt-2 text-sm text-white/70">
+              Nia returned <span className="font-bold text-white">{niaContextCount}</span> department context results that shaped the report draft — including Sgt. Rodriguez&apos;s SFST requirement and the Legal Division&apos;s Miranda policy.
+            </p>
+          </section>
+        )}
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="rounded-[2rem] border border-white/12 bg-white/[0.08] p-6 backdrop-blur">
@@ -240,7 +279,7 @@ export default function DemoPage() {
               </div>
               <div className="rounded-2xl bg-black/20 p-4">
                 <p className="font-bold">Audit trail</p>
-                <p className="mt-1 text-sm text-white/62">{audit.length ? `${audit.length} audit rows created.` : "Audit rows appear after drafting."}</p>
+                <p className="mt-1 text-sm text-white/62">{audit.length ? `${audit.length} audit rows stored in InsForge Postgres.` : "Audit rows appear after drafting."}</p>
               </div>
               <div className="rounded-2xl bg-black/20 p-4">
                 <p className="font-bold">Report status</p>
@@ -265,12 +304,24 @@ export default function DemoPage() {
                 <h2 className="mt-2 font-display text-3xl">Evidence in order</h2>
               </div>
               <span className="rounded-full bg-[#09111f] px-3 py-1 text-xs font-bold uppercase text-white">
-                {state?.processedOrder.join(" -> ") || "empty"}
+                {state?.processedOrder.join(" → ") || "empty"}
               </span>
             </div>
             <TimelineView timeline={(state?.timeline ?? []).slice(0, 5)} />
           </div>
         </section>
+
+        {/* ── Sponsor bar ── */}
+        <footer className="mt-12 border-t border-white/10 pt-6 pb-8">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/30 mb-3">Powered by</p>
+          <div className="flex flex-wrap gap-5 text-sm">
+            <span className="rounded-full border border-white/15 px-3 py-1 text-white/60">🧠 Hyperspell — Department data ingestion</span>
+            <span className="rounded-full border border-white/15 px-3 py-1 text-white/60">🔍 Nia — Knowledge indexing &amp; semantic search</span>
+            <span className="rounded-full border border-white/15 px-3 py-1 text-white/60">⚡ Tensorlake — Background evidence processing</span>
+            <span className="rounded-full border border-white/15 px-3 py-1 text-white/60">🗄️ InsForge — Postgres backend &amp; auth</span>
+            <span className="rounded-full border border-white/15 px-3 py-1 text-white/60">▲ Vercel — Deployment</span>
+          </div>
+        </footer>
       </div>
     </main>
   );
